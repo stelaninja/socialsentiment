@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.realpath(os.path.dirname(__file__)))
 os.chdir(os.path.realpath(os.path.dirname(__file__)))
 
 import dash
-from dash.dependencies import Output, Event, Input
+from dash.dependencies import Output, Input
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly
@@ -44,15 +44,37 @@ app_colors = {
     'someothercolor':'#FF206E',
 }
 
+# external CSS stylesheets
+external_stylesheets = [
+    'https://codepen.io/chriddyp/pen/bWLwgP.css',
+    {
+        'href': 'https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css',
+        'rel': 'stylesheet',
+        'integrity': 'sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO',
+        'crossorigin': 'anonymous'
+    }
+]
+
+# external JavaScript files
+external_scripts = [
+    'https://www.google-analytics.com/analytics.js',
+    {'src': 'https://cdn.polyfill.io/v2/polyfill.min.js'},
+    {
+        'src': 'https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.10/lodash.core.js',
+        'integrity': 'sha256-Qqd/EfdABZUcAxjOkMi8eGEivtdTkh3b65xCZL4qAQA=',
+        'crossorigin': 'anonymous'
+    }
+]   
+
 POS_NEG_NEUT = 0.1
 
 MAX_DF_LENGTH = 100
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_scripts=external_scripts, external_stylesheets=external_stylesheets)
 app.layout = html.Div(
     [   html.Div(className='container-fluid', children=[html.H2('Live Twitter Sentiment', style={'color':"#CECECE"}),
                                                         html.H5('Search:', style={'color':app_colors['text']}),
-                                                  dcc.Input(id='sentiment_term', value='twitter', type='text', style={'color':app_colors['someothercolor']}),
+                                                  dcc.Input(id='sentiment_term', value='twitter', type='text', debounce=True, style={'color':app_colors['someothercolor']}),
                                                   ],
                  style={'width':'98%','margin-left':10,'margin-right':10,'max-width':50000}),
 
@@ -69,26 +91,31 @@ app.layout = html.Div(
         
         dcc.Interval(
             id='graph-update',
-            interval=1*1000
+            interval=1*1000,
+            n_intervals=0
         ),
         dcc.Interval(
             id='historical-update',
-            interval=60*1000
+            interval=60*1000,
+            n_intervals=0
         ),
 
         dcc.Interval(
             id='related-update',
-            interval=30*1000
+            interval=30*1000,
+            n_intervals=0
         ),
 
         dcc.Interval(
             id='recent-table-update',
-            interval=2*1000
+            interval=2*1000,
+            n_intervals=0
         ),
 
         dcc.Interval(
             id='sentiment-pie-update',
-            interval=60*1000
+            interval=60*1000,
+            n_intervals=0
         ),
 
     ], style={'backgroundColor': app_colors['background'], 'margin-top':'-30px', 'height':'2000px',},
@@ -202,9 +229,9 @@ def pos_neg_neutral(col):
     
             
 @app.callback(Output('recent-tweets-table', 'children'),
-              [Input(component_id='sentiment_term', component_property='value')],
-              events=[Event('recent-table-update', 'interval')])        
-def update_recent_tweets(sentiment_term):
+              [Input(component_id='sentiment_term', component_property='value'),
+              Input('recent-table-update', 'n_intervals')])        
+def update_recent_tweets(sentiment_term, n_intervals):
     if sentiment_term:
         df = pd.read_sql("SELECT sentiment.* FROM sentiment_fts fts LEFT JOIN sentiment ON fts.rowid = sentiment.id WHERE fts.sentiment_fts MATCH ? ORDER BY fts.rowid DESC LIMIT 10", conn, params=(sentiment_term+'*',))
     else:
@@ -219,9 +246,8 @@ def update_recent_tweets(sentiment_term):
 
 
 @app.callback(Output('sentiment-pie', 'figure'),
-              [Input(component_id='sentiment_term', component_property='value')],
-              events=[Event('sentiment-pie-update', 'interval')])
-def update_pie_chart(sentiment_term):
+              [Input('sentiment_term', 'value'), Input('sentiment-pie-update', 'n_intervals')])
+def update_pie_chart(sentiment_term, n_intervals):
 
     # get data from cache
     for i in range(100):
@@ -263,9 +289,8 @@ def update_pie_chart(sentiment_term):
 
 
 @app.callback(Output('live-graph', 'figure'),
-              [Input(component_id='sentiment_term', component_property='value')],
-              events=[Event('graph-update', 'interval')])
-def update_graph_scatter(sentiment_term):
+              [Input('sentiment_term', 'value'), Input('graph-update', 'n_intervals')])
+def update_graph_scatter(sentiment_term, n_intervals):
     try:
         if sentiment_term:
             df = pd.read_sql("SELECT sentiment.* FROM sentiment_fts fts LEFT JOIN sentiment ON fts.rowid = sentiment.id WHERE fts.sentiment_fts MATCH ? ORDER BY fts.rowid DESC LIMIT 1000", conn, params=(sentiment_term+'*',))
@@ -313,9 +338,8 @@ def update_graph_scatter(sentiment_term):
 
 @app.callback(Output('historical-graph', 'figure'),
               [Input(component_id='sentiment_term', component_property='value'),
-               ],
-              events=[Event('historical-update', 'interval')])
-def update_hist_graph_scatter(sentiment_term):
+              Input('historical-update', 'n_intervals')])
+def update_hist_graph_scatter(sentiment_term, n_intervals):
     try:
         if sentiment_term:
             df = pd.read_sql("SELECT sentiment.* FROM sentiment_fts fts LEFT JOIN sentiment ON fts.rowid = sentiment.id WHERE fts.sentiment_fts MATCH ? ORDER BY fts.rowid DESC LIMIT 10000", conn, params=(sentiment_term+'*',))
@@ -392,9 +416,8 @@ def generate_size(value, smin, smax):
 #https://community.plot.ly/t/multiple-outputs-from-single-input-with-one-callback/4970
 
 @app.callback(Output('related-sentiment', 'children'),
-              [Input(component_id='sentiment_term', component_property='value')],
-              events=[Event('related-update', 'interval')])
-def update_related_terms(sentiment_term):
+              [Input(component_id='sentiment_term', component_property='value'), Input('related-update', 'n_intervals')])
+def update_related_terms(sentiment_term, n_intervals):
     try:
 
         # get data from cache
@@ -436,9 +459,8 @@ def update_related_terms(sentiment_term):
 # term: [sent, size]
 
 @app.callback(Output('recent-trending', 'children'),
-              [Input(component_id='sentiment_term', component_property='value')],
-              events=[Event('related-update', 'interval')])
-def update_recent_trending(sentiment_term):
+              [Input(component_id='sentiment_term', component_property='value'), Input('related-update', 'n_intervals')])
+def update_recent_trending(sentiment_term, n_intervals):
     try:
         query = """
                 SELECT
@@ -482,18 +504,7 @@ def update_recent_trending(sentiment_term):
             f.write('\n')
 
 
-            
-            
 
-external_css = ["https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/css/materialize.min.css"]
-for css in external_css:
-    app.css.append_css({"external_url": css})
-
-
-external_js = ['https://cdnjs.cloudflare.com/ajax/libs/materialize/0.100.2/js/materialize.min.js',
-               'https://pythonprogramming.net/static/socialsentiment/googleanalytics.js']
-for js in external_js:
-    app.scripts.append_script({'external_url': js})
 
 server = app.server
 dev_server = app.run_server
