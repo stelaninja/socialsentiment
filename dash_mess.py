@@ -1,25 +1,24 @@
 # set chdir to current dir
+import pickle
+import time
+from config import stop_words
+from cache import cache
+import regex as re
+import string
+from collections import Counter
+import pandas as pd
+import sqlite3
+import plotly.graph_objs as go
+import plotly
+import dash_html_components as html
+import dash_core_components as dcc
+from dash.dependencies import Output, Input
+import dash
 import os
 import sys
 sys.path.insert(0, os.path.realpath(os.path.dirname(__file__)))
 os.chdir(os.path.realpath(os.path.dirname(__file__)))
 
-import dash
-from dash.dependencies import Output, Input
-import dash_core_components as dcc
-import dash_html_components as html
-import plotly
-import plotly.graph_objs as go
-import sqlite3
-import pandas as pd
-
-from collections import Counter
-import string
-import regex as re
-from cache import cache
-from config import stop_words
-import time
-import pickle
 
 # it's ok to use one shared sqlite connection
 # as we are making selects only, no need for any kind of serialization as well
@@ -28,20 +27,27 @@ conn = sqlite3.connect('twitter.db', check_same_thread=False)
 punctuation = [str(i) for i in string.punctuation]
 
 
+sentiment_colors = {-1: "#EE6055",
+                    -0.5: "#FDE74C",
+                     0: "#FFE6AC",
+                     0.5: "#D0F2DF",
+                     1: "#9CEC5B", }
 
-sentiment_colors = {-1:"#EE6055",
-                    -0.5:"#FDE74C",
-                     0:"#FFE6AC",
-                     0.5:"#D0F2DF",
-                     1:"#9CEC5B",}
 
+# app_colors = {
+#     'background': '#0C0F0A',
+#     'text': '#FFFFFF',
+#     'sentiment-plot':'#41EAD4',
+#     'volume-bar':'#FBFC74',
+#     'someothercolor':'#FF206E',
+# }
 
 app_colors = {
     'background': '#0C0F0A',
     'text': '#FFFFFF',
-    'sentiment-plot':'#41EAD4',
-    'volume-bar':'#FBFC74',
-    'someothercolor':'#FF206E',
+    'sentiment-plot': '#FF6600',
+    'volume-bar': '#23395D',
+    'someothercolor': '#FF206E',
 }
 
 # external CSS stylesheets
@@ -64,31 +70,33 @@ external_scripts = [
         'integrity': 'sha256-Qqd/EfdABZUcAxjOkMi8eGEivtdTkh3b65xCZL4qAQA=',
         'crossorigin': 'anonymous'
     }
-]   
+]
 
 POS_NEG_NEUT = 0.1
 
 MAX_DF_LENGTH = 100
 
-app = dash.Dash(__name__, external_scripts=external_scripts, external_stylesheets=external_stylesheets)
-app.layout = html.Div(
-    [   html.Div(className='container-fluid', children=[html.H2('Live Twitter Sentiment', style={'color':"#CECECE"}),
-                                                        html.H5('Search:', style={'color':app_colors['text']}),
-                                                  dcc.Input(id='sentiment_term', value='twitter', type='text', debounce=True, style={'color':app_colors['someothercolor']}),
-                                                  ],
-                 style={'width':'98%','margin-left':10,'margin-right':10,'max-width':50000}),
 
-        
-        
-        html.Div(className='row', children=[html.Div(id='related-sentiment', children=html.Button('Loading related terms...', id='related_term_button'), className='col s12 m6 l6', style={"word-wrap":"break-word"}),
-                                            html.Div(id='recent-trending', className='col s12 m6 l6', style={"word-wrap":"break-word"})]),
+app = dash.Dash(__name__, external_scripts=external_scripts,
+                external_stylesheets=external_stylesheets)
+app.layout = html.Div(
+    [html.Div(className='page-header', children=[html.H1('Live Twitter Sentiment', style={"color": app_colors["text"]}), html.H4('Search:', style={"color": app_colors["text"]}),
+                                                  dcc.Input(id='sentiment_term', value='twitter', type='text', debounce=True, style={
+                                                            'color': app_colors['someothercolor']}),
+                                                  ],
+                 style={'width': '98%', 'margin-left': 10, 'margin-right': 10, 'max-width': 50000}),
+
+
+
+        html.Div(className='row', children=[html.Div(id='related-sentiment', children=html.Button('Loading related terms...', id='related_term_button'), className='col s12 m6 l6', style={"word-wrap": "break-word"}),
+                                            html.Div(id='recent-trending', className='col s12 m6 l6', style={"word-wrap": "break-word"})]),
 
         html.Div(className='row', children=[html.Div(dcc.Graph(id='live-graph', animate=False), className='col s12 m6 l6'),
                                             html.Div(dcc.Graph(id='historical-graph', animate=False), className='col s12 m6 l6')]),
 
         html.Div(className='row', children=[html.Div(id="recent-tweets-table", className='col s12 m6 l6'),
-                                            html.Div(dcc.Graph(id='sentiment-pie', animate=False), className='col s12 m6 l6'),]),
-        
+                                            html.Div(dcc.Graph(id='sentiment-pie', animate=False), className='col s12 m6 l6'), ]),
+
         dcc.Interval(
             id='graph-update',
             interval=1*1000,
@@ -118,64 +126,65 @@ app.layout = html.Div(
             n_intervals=0
         ),
 
-    ], style={'backgroundColor': app_colors['background'], 'margin-top':'-30px', 'height':'2000px',},
+    ], style = {'backgroundColor': app_colors['background'], 'margin-top': '0px', 'height': '2000px', },
 )
 
 
-def df_resample_sizes(df, maxlen=MAX_DF_LENGTH):
-    df_len = len(df)
-    resample_amt = 100
-    vol_df = df.copy()
-    vol_df['volume'] = 1
+def df_resample_sizes(df, maxlen = MAX_DF_LENGTH):
+    df_len=len(df)
+    resample_amt=100
+    vol_df=df.copy()
+    vol_df['volume']=1
 
-    ms_span = (df.index[-1] - df.index[0]).seconds * 1000
-    rs = int(ms_span / maxlen)
+    ms_span=(df.index[-1] - df.index[0]).seconds * 1000
+    rs=int(ms_span / maxlen)
 
-    df = df.resample('{}ms'.format(int(rs))).mean()
-    df.dropna(inplace=True)
+    df=df.resample('{}ms'.format(int(rs))).mean()
+    df.dropna(inplace = True)
 
-    vol_df = vol_df.resample('{}ms'.format(int(rs))).sum()
-    vol_df.dropna(inplace=True)
+    vol_df=vol_df.resample('{}ms'.format(int(rs))).sum()
+    vol_df.dropna(inplace = True)
 
-    df = df.join(vol_df['volume'])
+    df=df.join(vol_df['volume'])
 
     return df
 
 # make a counter with blacklist words and empty word with some big value - we'll use it later to filter counter
 stop_words.append('')
-blacklist_counter = Counter(dict(zip(stop_words, [1000000]*len(stop_words))))
+blacklist_counter=Counter(dict(zip(stop_words, [1000000]*len(stop_words))))
 
 # complie a regex for split operations (punctuation list, plus space and new line)
-split_regex = re.compile("[ \n"+re.escape("".join(punctuation))+']')
+split_regex=re.compile("[ \n"+re.escape("".join(punctuation))+']')
 
-def related_sentiments(df, sentiment_term, how_many=15):
+def related_sentiments(df, sentiment_term, how_many = 15):
     try:
 
-        related_words = {}
+        related_words={}
 
         # it's way faster to join strings to one string then use regex split using your punctuation list plus space and new line chars
         # regex precomiled above
-        tokens = split_regex.split(' '.join(df['tweet'].values.tolist()).lower())
+        tokens=split_regex.split(' '.join(df['tweet'].values.tolist()).lower())
 
         # it is way faster to remove stop_words, sentiment_term and empty token by making another counter
         # with some big value and substracting (counter will substract and remove tokens with negative count)
-        blacklist_counter_with_term = blacklist_counter.copy()
-        blacklist_counter_with_term[sentiment_term] = 1000000
-        counts = (Counter(tokens) - blacklist_counter_with_term).most_common(15)
+        blacklist_counter_with_term=blacklist_counter.copy()
+        blacklist_counter_with_term[sentiment_term]=1000000
+        counts=(Counter(tokens) - blacklist_counter_with_term).most_common(15)
 
-        for term,count in counts:
+        for term, count in counts:
             try:
-                df = pd.read_sql("SELECT sentiment.* FROM  sentiment_fts fts LEFT JOIN sentiment ON fts.rowid = sentiment.id WHERE fts.sentiment_fts MATCH ? ORDER BY fts.rowid DESC LIMIT 200", conn, params=(term,))
-                related_words[term] = [df['sentiment'].mean(), count]
+                df=pd.read_sql(
+                    "SELECT sentiment.* FROM  sentiment_fts fts LEFT JOIN sentiment ON fts.rowid = sentiment.id WHERE fts.sentiment_fts MATCH ? ORDER BY fts.rowid DESC LIMIT 200", conn, params = (term,))
+                related_words[term]=[df['sentiment'].mean(), count]
             except Exception as e:
-                with open('errors.txt','a') as f:
+                with open('errors.txt', 'a') as f:
                     f.write(str(e))
                     f.write('\n')
 
         return related_words
 
     except Exception as e:
-        with open('errors.txt','a') as f:
+        with open('errors.txt', 'a') as f:
             f.write(str(e))
             f.write('\n')
 
@@ -192,23 +201,23 @@ def quick_color(s):
     else:
         return app_colors['background']
 
-def generate_table(df, max_rows=10):
-    return html.Table(className="responsive-table",
-                      children=[
+def generate_table(df, max_rows = 10):
+    return html.Table(className = "responsive-table",
+                      children = [
                           html.Thead(
                               html.Tr(
                                   children=[
                                       html.Th(col.title()) for col in df.columns.values],
-                                  style={'color':app_colors['text']}
+                                  style={'color': app_colors['text']}
                                   )
                               ),
                           html.Tbody(
                               [
-                                  
+
                               html.Tr(
                                   children=[
                                       html.Td(data) for data in d
-                                      ], style={'color':app_colors['text'],
+                                      ], style={'color': app_colors['text'],
                                                 'background-color':quick_color(d[2])}
                                   )
                                for d in df.values.tolist()])
@@ -355,7 +364,7 @@ def update_hist_graph_scatter(sentiment_term, n_intervals):
         # store related sentiments in cache
         cache.set('related_terms', sentiment_term, related_sentiments(df, sentiment_term), 120)
 
-        #print(related_sentiments(df,sentiment_term), sentiment_term)
+        # print(related_sentiments(df,sentiment_term), sentiment_term)
         init_length = len(df)
         df['sentiment_smoothed'] = df['sentiment'].rolling(int(len(df)/5)).mean()
         df.dropna(inplace=True)
@@ -383,7 +392,7 @@ def update_hist_graph_scatter(sentiment_term, n_intervals):
 
         df['sentiment_shares'] = list(map(pos_neg_neutral, df['sentiment']))
 
-        #sentiment_shares = dict(df['sentiment_shares'].value_counts())
+        # sentiment_shares = dict(df['sentiment_shares'].value_counts())
         cache.set('sentiment_shares', sentiment_term, dict(df['sentiment_shares'].value_counts()), 120)
 
         return {'data': [data,data2],'layout' : go.Layout(xaxis=dict(range=[min(X),max(X)]), # add type='category to remove gaps'
@@ -413,7 +422,7 @@ def generate_size(value, smin, smax):
 
 
 # SINCE A SINGLE FUNCTION CANNOT UPDATE MULTIPLE OUTPUTS...
-#https://community.plot.ly/t/multiple-outputs-from-single-input-with-one-callback/4970
+# https://community.plot.ly/t/multiple-outputs-from-single-input-with-one-callback/4970
 
 @app.callback(Output('related-sentiment', 'children'),
               [Input(component_id='sentiment_term', component_property='value'), Input('related-update', 'n_intervals')])
@@ -433,7 +442,7 @@ def update_related_terms(sentiment_term, n_intervals):
         buttons = [html.Button('{}({})'.format(term, related_terms[term][1]), id='related_term_button', value=term, className='btn', type='submit', style={'background-color':'#4CBFE1',
                                                                                                                                                            'margin-right':'5px',
                                                                                                                                                            'margin-top':'5px'}) for term in related_terms]
-        #size: related_terms[term][1], sentiment related_terms[term][0]
+        # size: related_terms[term][1], sentiment related_terms[term][0]
         
 
         sizes = [related_terms[term][1] for term in related_terms]
@@ -455,7 +464,7 @@ def update_related_terms(sentiment_term, n_intervals):
             f.write('\n')
 
 
-#recent-trending div
+# recent-trending div
 # term: [sent, size]
 
 @app.callback(Output('recent-trending', 'children'),
@@ -479,10 +488,10 @@ def update_recent_trending(sentiment_term, n_intervals):
 
 
 
-##        buttons = [html.Button('{}({})'.format(term, related_terms[term][1]), id='related_term_button', value=term, className='btn', type='submit', style={'background-color':'#4CBFE1',
-##                                                                                                                                                           'margin-right':'5px',
-##                                                                                                                                                           'margin-top':'5px'}) for term in related_terms]
-        #size: related_terms[term][1], sentiment related_terms[term][0]
+# buttons = [html.Button('{}({})'.format(term, related_terms[term][1]), id='related_term_button', value=term, className='btn', type='submit', style={'background-color':'#4CBFE1',
+# 'margin-right':'5px',
+# 'margin-top':'5px'}) for term in related_terms]
+        # size: related_terms[term][1], sentiment related_terms[term][0]
         
 
         sizes = [related_terms[term][1] for term in related_terms]

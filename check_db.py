@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.path.realpath(os.path.dirname(__file__)))
 os.chdir(os.path.realpath(os.path.dirname(__file__)))
 
-input_key = "trump"
+input_key = "sverige"
 
 conn = sqlite3.connect("twitter.db")
 c = conn.cursor()

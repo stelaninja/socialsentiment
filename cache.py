@@ -1,7 +1,10 @@
 import time
 import os
 
+
 # sqlite-based cache
+
+
 class cache_sqlite:
 
     connection = None
@@ -11,14 +14,14 @@ class cache_sqlite:
     def __init__(self):
 
         # in-memory sqlite based cache
-        self.connection = sqlite3.connect(':memory:', check_same_thread=False, isolation_level=None)
+        self.connection = sqlite3.connect(
+            ':memory:', check_same_thread=False, isolation_level=None)
         self.cursor = self.connection.cursor()
         self.cursor.execute("PRAGMA journal_mode=wal")
         self.cursor.execute("PRAGMA wal_checkpoint=TRUNCATE")
 
         # start cache cleaning
         self.clean_cache()
-
 
     # cleans older than 60 seconds cache elements (those will be regenerated either way by update_hist_graph_scatter)
     def clean_cache(self):
@@ -28,7 +31,8 @@ class cache_sqlite:
 
         # clean old entries
         for table in self.tables:
-            self.cursor.execute("DELETE FROM {} WHERE expires < ?".format(table), (int(time.time()),))
+            self.cursor.execute("DELETE FROM {} WHERE expires < ?".format(
+                table), (int(time.time()),))
 
     # get cache element
     def get(self, pool, key):
@@ -38,7 +42,8 @@ class cache_sqlite:
             return None
 
         # get data from cache
-        result = self.cursor.execute("SELECT value FROM {} WHERE key = ?".format(pool), (key,)).fetchone()
+        result = self.cursor.execute(
+            "SELECT value FROM {} WHERE key = ?".format(pool), (key,)).fetchone()
 
         # no result
         if not result:
@@ -52,14 +57,19 @@ class cache_sqlite:
 
         # if new pool, create table
         if pool not in self.tables:
-            self.cursor.execute("CREATE TABLE IF NOT EXISTS {}(key TEXT PRIMARY KEY, value TEXT, expires INTEGER)".format(pool))
-            self.cursor.execute("CREATE INDEX expires_{0} ON {0} (expires ASC)".format(pool))
+            self.cursor.execute(
+                "CREATE TABLE IF NOT EXISTS {}(key TEXT PRIMARY KEY, value TEXT, expires INTEGER)".format(pool))
+            self.cursor.execute(
+                "CREATE INDEX expires_{0} ON {0} (expires ASC)".format(pool))
             self.tables.append(pool)
 
         # store value with key
-        self.cursor.execute("REPLACE INTO {} VALUES (?, ?, ?)".format(pool), (key, pickle.dumps(value), int(time.time() + ttl) if ttl > 0 and ttl <= 2592000 else ttl))
+        self.cursor.execute("REPLACE INTO {} VALUES (?, ?, ?)".format(pool), (key, pickle.dumps(
+            value), int(time.time() + ttl) if ttl > 0 and ttl <= 2592000 else ttl))
 
 # memcached-based cache
+
+
 class cache_memcached:
 
     client = None
@@ -76,7 +86,8 @@ class cache_memcached:
 
     # set element in cache
     def set(self, pool, key, value, ttl=0):
-        self.client.set(self.prefix + '##' + pool + '##' + key.encode('ascii', 'xmlcharrefreplace').decode('ascii'), value, ttl)
+        self.client.set(self.prefix + '##' + pool + '##' + key.encode('ascii',
+                                                                      'xmlcharrefreplace').decode('ascii'), value, ttl)
 
 
 # import variable
