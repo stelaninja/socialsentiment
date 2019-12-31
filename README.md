@@ -1,6 +1,6 @@
 # My version of Sentdex's Social Sentiment Dash Application
 - Dash is updated and no longer supports Event. That is replaced with Input.
-- Also added debounce=True to sentiment word input to stop it from updating with every letter you write. You now have to tye and press enter.
+- Also added debounce=True to sentiment word input to stop it from updating with every letter you write. You now have to type and press enter.
 - The Materialize css didn't work as it was. So I added Bootstrap according to the documents. Not sure how to get it to work, really.
 - Added 'check_db.py' to check if there is certain data in the database.
 
