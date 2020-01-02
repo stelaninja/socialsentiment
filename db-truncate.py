@@ -13,7 +13,7 @@ os.chdir(os.path.realpath(os.path.dirname(__file__)))
 conn = sqlite3.connect('twitter.db', check_same_thread=False)
 c = conn.cursor()
 
-HM_DAYS_KEEP = 3
+HM_DAYS_KEEP = 2
 current_ms_time = time.time()*1000
 one_day = 86400 * 1000
 del_to = int(current_ms_time - (HM_DAYS_KEEP*one_day))
